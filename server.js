@@ -198,19 +198,49 @@ app.post('/api/subscription/create', async (req, res) => {
 });
 
 async function ensureCustomer({ email, name }) {
+  // Step A — try to create customer
   try {
-    // Flow generates its own customerId — we only send email and name
     const params = {
       apiKey: FLOW_KEY,
       email:  email,
       name:   name || email,
     };
     const result = await flowRequest('/customer/create', params);
-    // Flow returns { customerId: "abc123hash", ... }
-    console.log(`[CUSTOMER] Created: ${result.customerId} for ${email}`);
-    return result.customerId;
+    console.log(`[CUSTOMER] Raw response:`, JSON.stringify(result));
+
+    if (result.customerId) {
+      console.log(`[CUSTOMER] Created: ${result.customerId}`);
+      return result.customerId;
+    }
+
+    // Flow may return customerId inside different fields
+    if (result.id) return result.id;
+
+    // If customer already exists Flow returns an error code — try to get by email
+    console.log(`[CUSTOMER] Create failed, trying to get existing...`);
+    return await getCustomerByEmail(email);
+
   } catch (e) {
-    console.log(`[CUSTOMER] Error creating customer: ${e.message}`);
+    console.log(`[CUSTOMER] Create exception: ${e.message}`);
+    return await getCustomerByEmail(email);
+  }
+}
+
+async function getCustomerByEmail(email) {
+  try {
+    const params = { apiKey: FLOW_KEY, filter: email, start: 0, limit: 1 };
+    const result = await flowRequest('/customer/list', params, 'GET');
+    console.log(`[CUSTOMER] List response:`, JSON.stringify(result));
+
+    if (result.data && result.data.length > 0) {
+      const custId = result.data[0].customerId;
+      console.log(`[CUSTOMER] Found existing: ${custId}`);
+      return custId;
+    }
+    console.log(`[CUSTOMER] Not found in list either`);
+    return null;
+  } catch (e) {
+    console.log(`[CUSTOMER] List exception: ${e.message}`);
     return null;
   }
 }
