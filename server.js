@@ -30,7 +30,7 @@ app.use(cors({
 
 // ─── CONFIG ────────────────────────────────────────────────────
 const IS_PROD     = process.env.NODE_ENV === 'production';
-const FLOW_BASE   = IS_PROD ? 'https://www.flow.cl/api' : 'https://sandbox.flow.cl/api';
+const FLOW_BASE = process.env.FLOW_SANDBOX === 'true' ? 'https://sandbox.flow.cl/api' : 'https://www.flow.cl/api';
 const FLOW_KEY    = process.env.FLOW_API_KEY;
 const FLOW_SECRET = process.env.FLOW_SECRET;
 const BASE_URL    = process.env.BASE_URL || 'http://localhost:3001';
