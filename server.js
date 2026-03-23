@@ -158,14 +158,17 @@ app.post('/api/subscription/create', async (req, res) => {
     // Step 1 — Ensure plan exists in Flow
     await ensurePlan(plan, subject);
 
-    // Step 2 — Create or update customer in Flow (idempotent)
-    await ensureCustomer({ custId, email, name });
+    // Step 2 — Create customer in Flow, get Flow-generated customerId
+    const flowCustomerId = await ensureCustomer({ email, name });
+    if (!flowCustomerId) {
+      return res.status(500).json({ error: 'No se pudo crear el cliente en Flow' });
+    }
 
-    // Step 3 — Create subscription
+    // Step 3 — Create subscription using Flow customerId
     const params = {
       apiKey:          FLOW_KEY,
       planId:          plan.id,
-      customerId:      custId,
+      customerId:      flowCustomerId,
       subscriptionId:  subId,
       email:           email,
       urlConfirmation: `${BASE_URL}/api/subscription/callback`,
@@ -194,19 +197,21 @@ app.post('/api/subscription/create', async (req, res) => {
   }
 });
 
-async function ensureCustomer({ custId, email, name }) {
+async function ensureCustomer({ email, name }) {
   try {
+    // Flow generates its own customerId — we only send email and name
     const params = {
-      apiKey:     FLOW_KEY,
-      customerId: custId,
-      email:      email,
-      name:       name || email,
+      apiKey: FLOW_KEY,
+      email:  email,
+      name:   name || email,
     };
     const result = await flowRequest('/customer/create', params);
-    console.log(`[CUSTOMER] Created or exists: ${custId}`);
-    return result;
+    // Flow returns { customerId: "abc123hash", ... }
+    console.log(`[CUSTOMER] Created: ${result.customerId} for ${email}`);
+    return result.customerId;
   } catch (e) {
-    console.log(`[CUSTOMER] Already exists or error (ok): ${custId}`);
+    console.log(`[CUSTOMER] Error creating customer: ${e.message}`);
+    return null;
   }
 }
 
