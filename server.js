@@ -240,9 +240,10 @@ async function ensureCustomer({ email, name }) {
   // Step A — try to create customer
   try {
     const params = {
-      apiKey: FLOW_KEY,
-      email:  email,
-      name:   name || email,
+      apiKey:     FLOW_KEY,
+      email:      email,
+      name:       name || email,
+      externalId: email.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50),
     };
     const result = await flowRequest('/customer/create', params);
     console.log(`[CUSTOMER] Raw response:`, JSON.stringify(result));
