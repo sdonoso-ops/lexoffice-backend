@@ -143,6 +143,9 @@ app.post('/api/payment/create', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────
 //  2. SUSCRIPCIÓN MENSUAL — Oficina Virtual
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  2a. SUSCRIPCIÓN — Paso 1: Crear cliente y redirigir a registrar tarjeta
+// ─────────────────────────────────────────────────────────────────
 app.post('/api/subscription/create', async (req, res) => {
   try {
     const { subject, amount, email, name, rut, phone } = req.body;
@@ -152,48 +155,84 @@ app.post('/api/subscription/create', async (req, res) => {
     }
 
     const plan  = PLANS[subject] || { id: `LEXOFFICE_CUSTOM_${amount}`, amount, currency: 'CLP' };
-    const subId = orderId('SUB');
-    const custId = rut ? 'CUST_' + rut.replace(/[^0-9kK]/gi, '').slice(0, 15) : `CUST_${Date.now()}`;
 
     // Step 1 — Ensure plan exists in Flow
     await ensurePlan(plan, subject);
 
-    // Step 2 — Create customer in Flow, get Flow-generated customerId
+    // Step 2 — Create customer in Flow
     const flowCustomerId = await ensureCustomer({ email, name });
     if (!flowCustomerId) {
       return res.status(500).json({ error: 'No se pudo crear el cliente en Flow' });
     }
 
-    // Step 3 — Create subscription using Flow customerId
-    const params = {
+    // Step 3 — Register card: redirect to Flow card registration page
+    // Flow will callback to /api/customer/callback when card is registered
+    const regParams = {
+      apiKey:     FLOW_KEY,
+      customerId: flowCustomerId,
+      url_return: `${BASE_URL}/api/customer/callback?planId=${plan.id}&customerId=${flowCustomerId}&email=${encodeURIComponent(email)}&subject=${encodeURIComponent(subject)}`,
+    };
+
+    const regData = await flowRequest('/customer/register', regParams);
+    console.log(`[CARD_REG] Response:`, JSON.stringify(regData));
+
+    if (regData.url && regData.token) {
+      console.log(`[CARD_REG] Redirecting to card registration for ${email}`);
+      return res.json({ url: `${regData.url}?token=${regData.token}` });
+    }
+
+    console.error('[CARD_REG] Flow error:', regData);
+    return res.status(400).json({ error: regData.message || 'Flow rechazó el registro de tarjeta' });
+
+  } catch (err) {
+    console.error('[SUBSCRIPTION] Error:', err);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  2b. SUSCRIPCIÓN — Paso 2: Callback post-registro de tarjeta → crear suscripción
+// ─────────────────────────────────────────────────────────────────
+app.get('/api/customer/callback', async (req, res) => {
+  try {
+    const { token, planId, customerId, email, subject } = req.query;
+
+    if (!token) {
+      console.error('[CARD_CALLBACK] No token received');
+      return res.redirect(`${process.env.FRONTEND_URL}/confirmacion.html?status=error`);
+    }
+
+    // Step 4 — Verify card registration status
+    const statusParams = { apiKey: FLOW_KEY, token };
+    const statusData   = await flowRequest('/customer/getRegisterStatus', statusParams, 'GET');
+    console.log(`[CARD_STATUS] Response:`, JSON.stringify(statusData));
+
+    if (statusData.status !== 1) {
+      console.error('[CARD_STATUS] Card not registered, status:', statusData.status);
+      return res.redirect(`${process.env.FRONTEND_URL}/confirmacion.html?status=card_error`);
+    }
+
+    // Step 5 — Card registered OK → create subscription
+    const subId = orderId('SUB');
+    const subParams = {
       apiKey:          FLOW_KEY,
-      planId:          plan.id,
-      customerId:      flowCustomerId,
+      planId:          planId,
+      customerId:      customerId,
       subscriptionId:  subId,
       email:           email,
       urlConfirmation: `${BASE_URL}/api/subscription/callback`,
       urlReturn:       `${BASE_URL}/confirmacion?sub=${subId}`,
     };
 
-    const data = await flowRequest('/subscription/create', params);
+    const subData = await flowRequest('/subscription/create', subParams);
+    console.log(`[SUBSCRIPTION] Created:`, JSON.stringify(subData));
 
-    if (data.url && data.token) {
-      console.log(`[SUBSCRIPTION] Created: ${subId} | ${subject} | ${email}`);
-      return res.json({ url: `${data.url}?token=${data.token}`, subscriptionId: subId });
-    }
-
-    // Flow may return a direct subscription without redirect (already subscribed)
-    if (data.subscriptionId || data.status) {
-      console.log(`[SUBSCRIPTION] Direct: ${subId} | ${subject} | ${email}`);
-      return res.json({ url: `${BASE_URL}/confirmacion?sub=${subId}`, subscriptionId: subId });
-    }
-
-    console.error('[SUBSCRIPTION] Flow error:', data);
-    return res.status(400).json({ error: data.message || 'Flow rechazó la suscripción' });
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(301, `${frontendUrl}/confirmacion.html?sub=${subId}`);
 
   } catch (err) {
-    console.error('[SUBSCRIPTION] Error:', err);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('[CARD_CALLBACK] Error:', err);
+    return res.redirect(`${process.env.FRONTEND_URL}/confirmacion.html?status=error`);
   }
 });
 
