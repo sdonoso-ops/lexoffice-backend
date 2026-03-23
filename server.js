@@ -300,7 +300,13 @@ app.post('/api/quote/request', async (req, res) => {
 app.get('/confirmacion', (req, res) => {
   const qs = new URLSearchParams(req.query).toString();
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  res.redirect(`${frontendUrl}/confirmacion.html?${qs}`);
+  res.redirect(301, `${frontendUrl}/confirmacion.html?${qs}`);
+});
+
+app.post('/confirmacion', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(301, `${frontendUrl}/confirmacion.html?${qs}`);
 });
 
 // ─────────────────────────────────────────────────────────────────
