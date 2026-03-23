@@ -151,14 +151,17 @@ app.post('/api/subscription/create', async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos: subject, email' });
     }
 
-    // Identify or construct plan
-    const plan    = PLANS[subject] || { id: `LEXOFFICE_CUSTOM_${amount}`, amount, currency: 'CLP' };
-    const subId   = orderId('SUB');
-    const custId  = rut ? rut.replace(/[^0-9kK]/gi, '').slice(0, 20) : `USER_${Date.now()}`;
+    const plan  = PLANS[subject] || { id: `LEXOFFICE_CUSTOM_${amount}`, amount, currency: 'CLP' };
+    const subId = orderId('SUB');
+    const custId = rut ? 'CUST_' + rut.replace(/[^0-9kK]/gi, '').slice(0, 15) : `CUST_${Date.now()}`;
 
-    // Ensure plan exists in Flow (idempotent: Flow returns error 400 if already exists — that's fine)
+    // Step 1 — Ensure plan exists in Flow
     await ensurePlan(plan, subject);
 
+    // Step 2 — Create or update customer in Flow (idempotent)
+    await ensureCustomer({ custId, email, name });
+
+    // Step 3 — Create subscription
     const params = {
       apiKey:          FLOW_KEY,
       planId:          plan.id,
@@ -176,6 +179,12 @@ app.post('/api/subscription/create', async (req, res) => {
       return res.json({ url: `${data.url}?token=${data.token}`, subscriptionId: subId });
     }
 
+    // Flow may return a direct subscription without redirect (already subscribed)
+    if (data.subscriptionId || data.status) {
+      console.log(`[SUBSCRIPTION] Direct: ${subId} | ${subject} | ${email}`);
+      return res.json({ url: `${BASE_URL}/confirmacion?sub=${subId}`, subscriptionId: subId });
+    }
+
     console.error('[SUBSCRIPTION] Flow error:', data);
     return res.status(400).json({ error: data.message || 'Flow rechazó la suscripción' });
 
@@ -184,6 +193,22 @@ app.post('/api/subscription/create', async (req, res) => {
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
+
+async function ensureCustomer({ custId, email, name }) {
+  try {
+    const params = {
+      apiKey:     FLOW_KEY,
+      customerId: custId,
+      email:      email,
+      name:       name || email,
+    };
+    const result = await flowRequest('/customer/create', params);
+    console.log(`[CUSTOMER] Created or exists: ${custId}`);
+    return result;
+  } catch (e) {
+    console.log(`[CUSTOMER] Already exists or error (ok): ${custId}`);
+  }
+}
 
 async function ensurePlan(plan, name) {
   try {
