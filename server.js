@@ -91,9 +91,9 @@ function orderId(prefix = 'ORD') {
 // These planId values must be created once in your Flow account.
 // The server will auto-create them if they don't exist.
 const PLANS = {
-  'Plan Esencial':    { id: 'LEXOFFICE_ESENCIAL',    amount: 15990, currency: 'CLP' },
-  'Plan Profesional': { id: 'LEXOFFICE_PROFESIONAL',  amount: 29990, currency: 'CLP' },
-  'Plan Executive':   { id: 'LEXOFFICE_EXECUTIVE',    amount: 59990, currency: 'CLP' },
+  'Plan Básico':    { id: 'LEXOFFICE_BASICO',    amount: 7021,  currency: 'CLP' },
+  'Plan Estándar':  { id: 'LEXOFFICE_ESTANDAR',  amount: 11781, currency: 'CLP' },
+  'Plan Premium':   { id: 'LEXOFFICE_PREMIUM',   amount: 17731, currency: 'CLP' },
 };
 
 // ─────────────────────────────────────────────────────────────────
